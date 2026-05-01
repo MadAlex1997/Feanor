@@ -1,0 +1,10 @@
+http:
+  middlewares:
+    # Applied to all authenticated routes. Limits are permissive for local MVP.
+    rate-limit:
+      rateLimit:
+        average: 100
+        period: 1s
+        burst: 200
+
+    # JWT validation middleware is added in task-005 once Keycloak is configured.

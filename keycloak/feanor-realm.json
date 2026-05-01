@@ -1,0 +1,103 @@
+{
+  "id": "feanor",
+  "realm": "feanor",
+  "displayName": "Fëanor",
+  "enabled": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionMaxLifespan": 28800,
+  "ssoSessionIdleTimeout": 28800,
+  "offlineSessionMaxLifespan": 5184000,
+  "offlineSessionIdleTimeout": 2592000,
+  "bruteForceProtected": true,
+  "loginWithEmailAllowed": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "roles": {
+    "realm": [
+      {"name": "platform_admin", "composite": false, "clientRole": false},
+      {"name": "engineer",       "composite": false, "clientRole": false},
+      {"name": "analyst",        "composite": false, "clientRole": false},
+      {"name": "service_account","composite": false, "clientRole": false}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "feanor-cli",
+      "name": "Fëanor CLI",
+      "description": "Device authorization flow for terminal login",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "true"
+      }
+    },
+    {
+      "clientId": "feanor-sdk",
+      "name": "Fëanor SDK",
+      "description": "Authorization code + PKCE for interactive SDK use",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:*", "https://localhost:*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "airflow-sa",
+      "name": "Airflow Service Account",
+      "description": "Client credentials grant for Airflow and internal services",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "changeme-airflow-sa",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "admin@feanor.local",
+      "email": "admin@feanor.local",
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["platform_admin"]
+    },
+    {
+      "username": "engineer@feanor.local",
+      "email": "engineer@feanor.local",
+      "firstName": "Data",
+      "lastName": "Engineer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["engineer"]
+    },
+    {
+      "username": "analyst@feanor.local",
+      "email": "analyst@feanor.local",
+      "firstName": "Data",
+      "lastName": "Analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["analyst"]
+    },
+    {
+      "username": "service-account-airflow-sa",
+      "enabled": true,
+      "serviceAccountClientId": "airflow-sa",
+      "realmRoles": ["service_account"]
+    }
+  ]
+}

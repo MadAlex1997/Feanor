@@ -1,0 +1,17 @@
+# Local environment — never commit real credentials
+.env
+
+# Docker bind-mount volumes — data lives on the Data drive, not in the repo
+volumes/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+.ruff_cache/
+
+# Pixi environments (lockfile IS committed; local env dirs are not)
+.pixi/
