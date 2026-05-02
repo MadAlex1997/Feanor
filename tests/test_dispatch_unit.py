@@ -84,13 +84,15 @@ async def test_run_container_nonzero_exit_sets_failed() -> None:
     template = _make_template()
     db = _make_db()
 
-    with patch("asyncio.to_thread", new=AsyncMock(return_value=(1, "error output"))):
+    fake_ref = "s3://feanor-logs/test/stdout.log"
+    with (
+        patch("asyncio.to_thread", new=AsyncMock(return_value=(1, "error output"))),
+        patch("api.app.dispatch.docker_runner.upload_log", new=AsyncMock(return_value=fake_ref)),
+    ):
         await run_container(execution, template, db)
 
     assert execution.status == ExecutionStatus.failed
-    assert execution.log_ref is not None
-    decoded = base64.b64decode(execution.log_ref.split(":", 1)[1]).decode()
-    assert "error output" in decoded
+    assert execution.log_ref == fake_ref
 
 
 @pytest.mark.asyncio

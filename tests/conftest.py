@@ -126,3 +126,26 @@ def engineer_headers() -> dict:
 @pytest.fixture(scope="session")
 def admin_headers() -> dict:
     return {"X-Feanor-Subject": "admin", "X-Feanor-Roles": "platform_admin"}
+
+
+@pytest.fixture(scope="session")
+def service_account_headers() -> dict:
+    return {"X-Feanor-Subject": "airflow-sa", "X-Feanor-Roles": "service_account"}
+
+
+@pytest.fixture(scope="session")
+def feanor_service_client():
+    """SDK Client using FEANOR_CLIENT_ID / FEANOR_CLIENT_SECRET env vars.
+
+    Skipped when the env vars are not set (CI without a live Keycloak).
+    """
+    import os
+
+    client_id = os.environ.get("FEANOR_CLIENT_ID")
+    client_secret = os.environ.get("FEANOR_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        pytest.skip("FEANOR_CLIENT_ID / FEANOR_CLIENT_SECRET not set — skipping service-account tests")
+
+    from feanor.client import Client
+
+    return Client()

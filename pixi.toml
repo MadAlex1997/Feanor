@@ -22,6 +22,7 @@ aiofiles = ">=23"
 
 [feature.api.pypi-dependencies]
 docker = ">=7"
+boto3 = ">=1.34"
 
 [feature.sdk.dependencies]
 typer = ">=0.12"
@@ -41,19 +42,28 @@ ruff = ">=0.4"
 feanor = { path = "feanor/", editable = true }
 testcontainers = { version = ">=4.0", extras = ["postgres"] }
 
+[feature.worker.pypi-dependencies]
+duckdb = ">=0.10"
+
 [feature.lint.dependencies]
 black = ">=24"
 ruff = ">=0.4"
 
 [environments]
-default = { features = ["api", "sdk", "dev"], solve-group = "default" }
+default = { features = ["api", "sdk", "worker", "dev"], solve-group = "default" }
 api = { features = ["api", "lint"], solve-group = "default" }
 sdk = { features = ["sdk", "dev"], solve-group = "default" }
+worker = { features = ["worker", "sdk", "dev"], solve-group = "default" }
+
+[feature.airflow-tests.pypi-dependencies]
+apache-airflow = ">=2.9,<3"
 
 [tasks]
 api-dev = { cmd = "uvicorn api.app.main:app --reload --host 0.0.0.0 --port 8080", env = { PYTHONPATH = "." } }
-test = { cmd = "pytest --ignore=volumes", env = { PYTHONPATH = "." } }
+test = { cmd = "pytest --ignore=volumes -m 'not e2e'", env = { PYTHONPATH = "." } }
+test-e2e = { cmd = "pytest -m e2e", env = { PYTHONPATH = "." } }
 lint = { cmd = "black --check api feanor && ruff check api feanor" }
 lint-fix = { cmd = "black api feanor && ruff check --fix api feanor" }
 db-upgrade = { cmd = "alembic upgrade head", env = { PYTHONPATH = "." } }
 db-downgrade = { cmd = "alembic downgrade -1", env = { PYTHONPATH = "." } }
+build-airflow = { cmd = "docker compose build airflow-webserver" }

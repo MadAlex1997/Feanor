@@ -3,19 +3,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app.dispatch import update_execution_status
 from api.app.models.execution import Execution, ExecutionStatus
+from api.app.storage import upload_log
 
 if TYPE_CHECKING:
     from api.app.models.template import ExecutionTemplate
-
-import json
 
 _DEFAULT_IMAGES = {
     "serverless_standard": "feanor-worker-serverless:local",
@@ -158,7 +157,13 @@ async def run_container(
         await db.commit()
         return
 
-    log_ref = "inline:" + base64.b64encode(log_text.encode()).decode() if log_text else None
+    # Upload logs to MinIO; fall back to inline if upload fails.
+    log_ref: str | None = None
+    if log_text:
+        try:
+            log_ref = await upload_log(execution.id, log_text.encode())
+        except Exception:
+            log_ref = "inline:" + base64.b64encode(log_text.encode()).decode()
 
     if exit_code == 0:
         await update_execution_status(

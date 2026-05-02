@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +13,16 @@ from fastapi.testclient import TestClient
 from api.app.db import get_db
 from api.app.middleware import RequestIDMiddleware
 from api.app.routes.v1.connectors import _decode_config, _encode_config, router
+
+
+@pytest.fixture(autouse=True)
+def _no_catalog_io():
+    """Prevent catalog file writes and Trino calls in unit tests."""
+    with (
+        patch("api.app.routes.v1.connectors.sync_catalog", new=AsyncMock()),
+        patch("api.app.routes.v1.connectors.remove_catalog", new=AsyncMock()),
+    ):
+        yield
 
 _ANALYST_HEADERS = {"X-Feanor-Subject": "alice", "X-Feanor-Roles": "analyst"}
 _ENG_HEADERS = {"X-Feanor-Subject": "bob", "X-Feanor-Roles": "engineer"}

@@ -65,12 +65,26 @@ class ExecutionsResource:
         data = self._http.raise_for_envelope(resp)
         return Execution.model_validate(data)
 
-    async def logs(self, execution_id: str, tail: int | None = None) -> str | None:
+    async def logs(
+        self,
+        execution_id: str,
+        tail: int | None = None,
+        follow: bool = False,
+    ) -> str | None:
         params: dict[str, Any] = {}
         if tail is not None:
             params["tail"] = tail
-        resp = await self._http.get(f"/v1/executions/{execution_id}/logs", params=params)
-        if resp.status_code == 204:
+        if follow:
+            params["follow"] = "true"
+
+        resp = await self._http.get(
+            f"/v1/executions/{execution_id}/logs",
+            params=params,
+        )
+        if resp.status_code in (202, 204):
             return None
+        if follow:
+            # Streaming response — return the full body as a string.
+            return resp.text
         data = self._http.raise_for_envelope(resp)
         return data["log"]

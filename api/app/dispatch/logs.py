@@ -9,14 +9,20 @@ async def fetch_log(log_ref: str) -> str | None:
 
     Supported schemes:
       inline:<base64>   — base64-encoded log text stored directly in log_ref
-      file://<path>     — read from local filesystem asynchronously
+      s3://<bucket>/…   — object stored in MinIO/S3
+      file://<path>     — read from local filesystem (dev/testing only)
 
-    Returns None if the source exists but has no content (e.g. missing file).
+    Returns None if the source exists but has no content.
     Returns an error string for unknown schemes rather than raising.
     """
     if log_ref.startswith("inline:"):
         encoded = log_ref[len("inline:"):]
         return base64.b64decode(encoded).decode("utf-8", errors="replace")
+
+    if log_ref.startswith("s3://"):
+        from api.app.storage import read_log
+
+        return await read_log(log_ref) or None
 
     if log_ref.startswith("file://"):
         import aiofiles

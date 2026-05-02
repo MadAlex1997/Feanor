@@ -15,6 +15,7 @@ from api.app.models.connector import Connector
 from api.app.schemas import APIResponse, Meta
 from api.app.schemas.connector import ConnectorCreate, ConnectorRead, ConnectorUpdate
 from api.app.schemas.pagination import PaginatedMeta, decode_cursor, encode_cursor
+from api.app.trino.catalog import remove_catalog, sync_catalog
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -67,6 +68,7 @@ async def create_connector(
     db.add(conn)
     await db.flush()
     await db.refresh(conn)
+    await sync_catalog(conn)
     return APIResponse(data=_to_read(conn), meta=_meta(request))
 
 
@@ -171,6 +173,7 @@ async def update_connector(
 
     await db.flush()
     await db.refresh(row)
+    await sync_catalog(row)
     return APIResponse(data=_to_read(row), meta=_meta(request))
 
 
@@ -184,3 +187,4 @@ async def delete_connector(
     if row is None:
         raise HTTPException(status_code=404, detail="connector not found")
     await db.delete(row)
+    await remove_catalog(row)

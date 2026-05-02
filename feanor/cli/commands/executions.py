@@ -115,30 +115,13 @@ def logs(
             typer.echo(result)
 
     async def _run_follow() -> None:
-        lines_seen = 0
         async with AsyncClient(profile) as client:
-            while True:
-                log_text = await client.executions.logs(execution_id, tail=tail)
-                if log_text is not None:
-                    lines = log_text.splitlines()
-                    new_lines = lines[lines_seen:]
-                    for line in new_lines:
-                        typer.echo(line)
-                    lines_seen = len(lines)
-
-                exe = await client.executions.get(execution_id)
-                if exe.status in _TERMINAL:
-                    # Final fetch without tail
-                    final = await client.executions.logs(execution_id)
-                    if final is not None:
-                        all_lines = final.splitlines()
-                        for line in all_lines[lines_seen:]:
-                            typer.echo(line)
-                    if exe.status == "failed":
-                        raise typer.Exit(1)
-                    return
-
-                await asyncio.sleep(interval)
+            log_text = await client.executions.logs(execution_id, follow=True)
+            if log_text:
+                typer.echo(log_text, nl=False)
+            exe = await client.executions.get(execution_id)
+            if exe.status == "failed":
+                raise typer.Exit(1)
 
     try:
         if follow:

@@ -1,3 +1,28 @@
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: feanor-airflow:local
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${POSTGRES_USER:-feanor}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/airflow"
+    AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:-}"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW_SECRET_KEY:-changeme}"
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    FEANOR_API_URL: "http://api:8080"
+    FEANOR_CLIENT_ID: "${AIRFLOW_SA_CLIENT_ID:-airflow-sa}"
+    FEANOR_CLIENT_SECRET: "${AIRFLOW_SA_CLIENT_SECRET:-changeme-airflow-sa}"
+    FEANOR_KEYCLOAK_URL: "http://keycloak:8080"
+    FEANOR_REALM: feanor
+  volumes:
+    - ./dags:/opt/airflow/dags:ro
+    - airflow-logs:/opt/airflow/logs
+  networks:
+    - feanor
+
 services:
   postgres:
     image: postgres:16
@@ -103,8 +128,15 @@ services:
       FEANOR_S3_ENDPOINT: http://minio:9000
       FEANOR_RESULT_PREFIX: feanor-results
       FEANOR_DOCKER_NETWORK: feanor
+      TRINO_CATALOG_DIR: /var/trino-catalog
+      TRINO_HOST: trino
+      TRINO_PORT: "8080"
+      LOG_BUCKET: feanor-logs
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/trino/catalog:/var/trino-catalog
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,11 +156,115 @@ services:
       - "traefik.http.routers.api-protected.middlewares=jwt-auth@file,rate-limit@file"
       - "traefik.http.routers.api-protected.priority=10"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+        mc mb --ignore-existing local/feanor-results;
+        mc mb --ignore-existing local/feanor-logs;
+        mc mb --ignore-existing local/feanor-test;
+        echo 'MinIO buckets ready.';
+      "
+    networks:
+      - feanor
+    restart: on-failure
+
+  trino:
+    image: trinodb/trino:latest
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-feanor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-feanor}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    volumes:
+      - ./infra/trino:/etc/trino:ro
+      - trino-data:/data/trino
+      - trino-hive-catalog:/data/trino-hive-catalog
+    ports:
+      - "18080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - feanor
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/info"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_PASSWORD: "${AIRFLOW_ADMIN_PASSWORD:-admin}"
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create
+          --username admin
+          --password $$AIRFLOW_ADMIN_PASSWORD
+          --firstname Feanor --lastname Admin
+          --role Admin --email admin@feanor.local
+          2>&1 | grep -v 'already exists' || true &&
+        python /opt/airflow/setup_connections.py &&
+        python /opt/airflow/seed_variables.py
+      "
+    volumes:
+      - ./dags:/opt/airflow/dags:ro
+      - airflow-logs:/opt/airflow/logs
+      - ./airflow/setup_connections.py:/opt/airflow/setup_connections.py:ro
+      - ./airflow/seed_variables.py:/opt/airflow/seed_variables.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver
+    ports:
+      - "8090:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   worker:
@@ -148,3 +284,8 @@ services:
 networks:
   feanor:
     name: feanor
+
+volumes:
+  trino-data:
+  trino-hive-catalog:
+  airflow-logs:

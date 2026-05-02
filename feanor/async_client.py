@@ -1,10 +1,14 @@
 """AsyncClient — primary SDK implementation."""
 from __future__ import annotations
 
+from __future__ import annotations
+
 from feanor.config import Profile, load_config
+from feanor.models.query import QueryResult
 from feanor.http import FeanorHTTPClient
 from feanor.resources.datasets import DatasetsResource
 from feanor.resources.executions import ExecutionsResource
+from feanor.resources.query import QueryResource
 from feanor.resources.system import SystemResource
 from feanor.resources.templates import TemplatesResource
 from feanor.resources.workflows import WorkflowsResource
@@ -26,6 +30,17 @@ class AsyncClient:
         self.executions = ExecutionsResource(self._http)
         self.templates = TemplatesResource(self._http)
         self.system = SystemResource(self._http)
+        self._query_resource = QueryResource(self._resolved)
+
+    async def query(
+        self,
+        sql: str,
+        *,
+        catalog: str | None = None,
+        schema: str | None = None,
+        max_rows: int = 10_000,
+    ) -> QueryResult:
+        return await self._query_resource.query(sql, catalog=catalog, schema=schema, max_rows=max_rows)
 
     async def aclose(self) -> None:
         await self._http.aclose()

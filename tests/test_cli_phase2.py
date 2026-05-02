@@ -218,7 +218,7 @@ def test_executions_logs_follow_polls_until_terminal() -> None:
 
     call_count = 0
 
-    async def fake_logs(eid, tail=None):
+    async def fake_logs(eid, tail=None, follow=False):
         nonlocal call_count
         call_count += 1
         return f"line{call_count}"

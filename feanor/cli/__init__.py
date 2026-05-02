@@ -9,11 +9,11 @@ from feanor.cli.commands import (
     datasets,
     executions,
     infrastructure,
-    query,
     system,
     templates,
     workflows,
 )
+from feanor.cli.commands.query import run_query
 
 app = typer.Typer(
     name="feanor",
@@ -41,7 +41,7 @@ app.add_typer(auth.app, name="auth")
 app.add_typer(datasets.app, name="datasets")
 app.add_typer(workflows.app, name="workflows")
 app.add_typer(executions.app, name="executions")
-app.add_typer(query.app, name="query")
+app.command("query")(run_query)
 app.add_typer(templates.app, name="templates")
 app.add_typer(system.app, name="system")
 app.add_typer(infrastructure.app, name="infrastructure")

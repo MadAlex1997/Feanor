@@ -28,6 +28,7 @@ class Profile(BaseModel):
     api_url: str
     keycloak_url: str
     realm: str
+    trino_url: str = "http://localhost:18080"
     token: str | None = None
     refresh_token: str | None = None
     token_expires_at: datetime | None = None
@@ -69,6 +70,18 @@ def load_config(profile: str | None = None) -> Profile:
     # FEANOR_API_URL overrides only api_url.
     if api_url := os.environ.get("FEANOR_API_URL"):
         data["api_url"] = api_url
+
+    # FEANOR_TRINO_URL overrides only trino_url.
+    if trino_url := os.environ.get("FEANOR_TRINO_URL"):
+        data["trino_url"] = trino_url
+
+    # FEANOR_KEYCLOAK_URL and FEANOR_REALM allow service-account containers
+    # (Airflow, workers) to override auth endpoints without a config file.
+    if keycloak_url := os.environ.get("FEANOR_KEYCLOAK_URL"):
+        data["keycloak_url"] = keycloak_url
+
+    if realm := os.environ.get("FEANOR_REALM"):
+        data["realm"] = realm
 
     return Profile(**data)
 

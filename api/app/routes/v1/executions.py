@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from api.app.db import AsyncSessionLocal, get_db
 from api.app.deps import ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT, CurrentUser, require_roles
 from api.app.dispatch import VALID_TRANSITIONS, dispatch_execution, is_valid_transition, update_execution_status
 from api.app.dispatch.logs import fetch_log
+from api.app.storage import stream_log
 from api.app.models.execution import Execution, ExecutionStatus
 from api.app.schemas import APIResponse, Meta
 from api.app.schemas.execution import ExecutionRead, ExecutionStatusUpdate
@@ -164,6 +166,7 @@ async def get_execution_logs(
     execution_id: uuid.UUID,
     request: Request,
     tail: int | None = Query(None, ge=1),
+    follow: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = _ANY_ROLE,
 ) -> Any:
@@ -172,7 +175,16 @@ async def get_execution_logs(
         raise HTTPException(status_code=404, detail="execution not found")
     _check_visibility(row, current_user)
 
+    if follow:
+        return _follow_logs(execution_id, db)
+
     if row.log_ref is None:
+        if row.status == ExecutionStatus.running:
+            return Response(
+                content='{"message": "logs not yet available"}',
+                status_code=202,
+                media_type="application/json",
+            )
         return Response(status_code=204)
 
     log_text = await fetch_log(row.log_ref)
@@ -187,6 +199,36 @@ async def get_execution_logs(
         data={"execution_id": str(execution_id), "log": log_text},
         meta=_meta(request),
     )
+
+
+def _follow_logs(execution_id: uuid.UUID, db: AsyncSession) -> StreamingResponse:
+    """Return a streaming response that tails logs until the execution is terminal."""
+
+    async def _generate():
+        poll_interval = 2
+        last_offset = 0
+        while True:
+            await db.refresh(await db.get(Execution, execution_id))
+            row = await db.get(Execution, execution_id)
+            if row is None:
+                return
+
+            if row.log_ref and row.log_ref.startswith("s3://"):
+                # Yield any new bytes since last poll.
+                chunks: list[bytes] = []
+                async for chunk in stream_log(row.log_ref):
+                    chunks.append(chunk)
+                data = b"".join(chunks)
+                if len(data) > last_offset:
+                    yield data[last_offset:]
+                    last_offset = len(data)
+
+            if row.status in _TERMINAL:
+                return
+
+            await asyncio.sleep(poll_interval)
+
+    return StreamingResponse(_generate(), media_type="text/plain")
 
 
 @router.post("/{execution_id}/cancel")
