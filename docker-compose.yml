@@ -95,6 +95,8 @@ services:
       dockerfile: api/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-feanor}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-feanor}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: feanor
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,9 +104,17 @@ services:
       - feanor
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.services.api.loadbalancer.server.port=8080"
+      # Public routes — no JWT required (health checks, docs, auth verify endpoint).
+      - "traefik.http.routers.api-public.rule=PathPrefix(`/health`) || PathPrefix(`/ready`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`) || PathPrefix(`/auth/verify`)"
+      - "traefik.http.routers.api-public.entrypoints=web"
+      - "traefik.http.routers.api-public.middlewares=rate-limit@file"
+      - "traefik.http.routers.api-public.priority=20"
+      # Protected routes — JWT required.
+      - "traefik.http.routers.api-protected.rule=PathPrefix(`/v1`)"
+      - "traefik.http.routers.api-protected.entrypoints=web"
+      - "traefik.http.routers.api-protected.middlewares=jwt-auth@file,rate-limit@file"
+      - "traefik.http.routers.api-protected.priority=10"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

@@ -1,7 +1,7 @@
 ---
 title: Traefik routing to FastAPI with JWT validation
 phase: 0
-status: Pending
+status: Completed
 ---
 
 ## Description

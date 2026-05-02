@@ -1,10 +1,22 @@
 http:
   middlewares:
-    # Applied to all authenticated routes. Limits are permissive for local MVP.
+    # Applied to all routes. Limits are permissive for local MVP.
     rate-limit:
       rateLimit:
         average: 100
         period: 1s
         burst: 200
 
-    # JWT validation middleware is added in task-005 once Keycloak is configured.
+    # JWT validation via forwardAuth. The API's /auth/verify endpoint fetches
+    # Keycloak's JWKS, verifies the token signature and expiry, then returns
+    # X-Feanor-Subject and X-Feanor-Roles for downstream route handlers.
+    # Chosen over a custom Traefik plugin: no binary distribution needed, the
+    # validation logic lives in the same codebase, and the endpoint is testable
+    # independently. Trade-off: one extra intra-cluster hop per authenticated request.
+    jwt-auth:
+      forwardAuth:
+        address: "http://api:8080/auth/verify"
+        authResponseHeaders:
+          - "X-Feanor-Subject"
+          - "X-Feanor-Roles"
+        trustForwardHeader: true
