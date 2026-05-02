@@ -1,7 +1,7 @@
 ---
 title: feanor Client and AsyncClient — HTTP client, retry logic, resource namespaces
 phase: 0
-status: Pending
+status: Completed
 ---
 
 ## Description

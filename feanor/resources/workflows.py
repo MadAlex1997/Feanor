@@ -3,23 +3,25 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from feanor.http import FeanorHTTPClient
     from feanor.models.workflow import Workflow
 
 
 class WorkflowsResource:
-    """Implemented in task-008 / Phase 1."""
+    def __init__(self, http: "FeanorHTTPClient") -> None:
+        self._http = http
 
-    def list(self) -> list[Workflow]:
+    async def list(self) -> list[Workflow]:
         raise NotImplementedError
 
-    def get(self, workflow_id: str) -> Workflow:
+    async def get(self, workflow_id: str) -> Workflow:
         raise NotImplementedError
 
-    def create(self, **kwargs: object) -> Workflow:
+    async def create(self, **kwargs: object) -> Workflow:
         raise NotImplementedError
 
-    def update(self, workflow_id: str, **kwargs: object) -> Workflow:
+    async def update(self, workflow_id: str, **kwargs: object) -> Workflow:
         raise NotImplementedError
 
-    def delete(self, workflow_id: str) -> None:
+    async def delete(self, workflow_id: str) -> None:
         raise NotImplementedError

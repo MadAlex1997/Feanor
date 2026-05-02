@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from feanor.http import FeanorHTTPClient
 
 
 class HealthResponse(BaseModel):
@@ -8,10 +13,17 @@ class HealthResponse(BaseModel):
 
 
 class SystemResource:
-    """Implemented in task-008."""
+    def __init__(self, http: "FeanorHTTPClient") -> None:
+        self._http = http
 
-    def health(self) -> HealthResponse:
-        raise NotImplementedError
+    async def health(self) -> HealthResponse:
+        resp = await self._http.get("/health")
+        resp.raise_for_status()
+        data: Any = resp.json().get("data", {})
+        return HealthResponse(status=data.get("status", "unknown"))
 
-    def ready(self) -> HealthResponse:
-        raise NotImplementedError
+    async def ready(self) -> HealthResponse:
+        resp = await self._http.get("/ready")
+        resp.raise_for_status()
+        data: Any = resp.json().get("data", {})
+        return HealthResponse(status=data.get("status", "unknown"))
