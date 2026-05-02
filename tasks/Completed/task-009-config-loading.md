@@ -1,7 +1,7 @@
 ---
 title: feanor config loading — ~/.feanor/config.yaml and --profile flag
 phase: 0
-status: Pending
+status: Completed
 ---
 
 ## Description
