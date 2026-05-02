@@ -5,8 +5,7 @@ variables that do not already exist so user-configured values are not overwritte
 """
 from __future__ import annotations
 
-from airflow.models import Variable
-from airflow.utils import db as airflow_db
+import subprocess
 
 _DEFAULTS: dict[str, str] = {
     # feanor_workflow_run DAG — point at an example workflow slug.
@@ -20,12 +19,13 @@ _DEFAULTS: dict[str, str] = {
     "feanor_data_validation__min_rows": "0",
 }
 
-with airflow_db.create_session() as session:
-    for key, value in _DEFAULTS.items():
-        existing = session.query(Variable).filter_by(key=key).first()
-        if existing is None:
-            session.add(Variable(key=key, val=value))
-            print(f"Created variable: {key}")
-        else:
-            print(f"Variable already exists, skipping: {key}")
-    session.commit()
+for key, value in _DEFAULTS.items():
+    result = subprocess.run(
+        ["airflow", "variables", "get", key],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        subprocess.run(["airflow", "variables", "set", key, value], check=True)
+        print(f"Created variable: {key}")
+    else:
+        print(f"Variable already exists, skipping: {key}")

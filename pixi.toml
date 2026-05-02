@@ -31,6 +31,9 @@ pydantic = ">=2.0,<3"
 pyyaml = ">=6"
 rich = ">=13"
 
+[feature.sdk.pypi-dependencies]
+feanor = { path = "feanor/", editable = true }
+
 [feature.dev.dependencies]
 pytest = ">=8"
 pytest-asyncio = ">=0.23"
@@ -39,7 +42,6 @@ black = ">=24"
 ruff = ">=0.4"
 
 [feature.dev.pypi-dependencies]
-feanor = { path = "feanor/", editable = true }
 testcontainers = { version = ">=4.0", extras = ["postgres"] }
 
 [feature.worker.pypi-dependencies]
@@ -54,9 +56,10 @@ default = { features = ["api", "sdk", "worker", "dev"], solve-group = "default" 
 api = { features = ["api", "lint"], solve-group = "default" }
 sdk = { features = ["sdk", "dev"], solve-group = "default" }
 worker = { features = ["worker", "sdk", "dev"], solve-group = "default" }
+airflow-tests = { features = ["airflow-tests", "sdk", "dev"], solve-group = "airflow-tests" }
 
 [feature.airflow-tests.pypi-dependencies]
-apache-airflow = ">=2.9,<3"
+apache-airflow = ">=3.2.1,<4"
 
 [tasks]
 api-dev = { cmd = "uvicorn api.app.main:app --reload --host 0.0.0.0 --port 8080", env = { PYTHONPATH = "." } }
