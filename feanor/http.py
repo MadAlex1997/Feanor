@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 import httpx
 
 from feanor.auth import TokenManager
 from feanor.config import Profile
+from feanor.exceptions import FeanorAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,20 @@ class FeanorHTTPClient:
 
     async def delete(self, path: str, **kwargs: object) -> httpx.Response:
         return await self.request("DELETE", path, **kwargs)
+
+    def raise_for_envelope(self, resp: httpx.Response) -> Any:
+        """Parse the response envelope; raise FeanorAPIError on error or non-2xx."""
+        if not resp.is_success:
+            try:
+                body = resp.json()
+                msg = body.get("error") or body.get("detail") or resp.text
+            except Exception:
+                msg = resp.text
+            raise FeanorAPIError(status_code=resp.status_code, message=str(msg))
+        body = resp.json()
+        if body.get("error"):
+            raise FeanorAPIError(status_code=resp.status_code, message=body["error"])
+        return body.get("data")
 
     async def aclose(self) -> None:
         await self._client.aclose()

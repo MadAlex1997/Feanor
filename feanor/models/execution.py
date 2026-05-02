@@ -12,10 +12,11 @@ ExecutionStatus = Literal["pending", "running", "succeeded", "failed", "cancelle
 class Execution(BaseModel):
     id: uuid.UUID
     workflow_id: uuid.UUID
-    status: ExecutionStatus
+    status: str
     inputs: dict[str, Any] | None = None
     result_ref: str | None = None
     log_ref: str | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
     created_at: datetime
+    created_by: str
