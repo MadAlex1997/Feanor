@@ -48,5 +48,6 @@ class Execution(Base):
         server_default="now()",
         nullable=False,
     )
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
     workflow: Mapped["Workflow"] = relationship("Workflow")  # type: ignore[name-defined]  # noqa: F821
