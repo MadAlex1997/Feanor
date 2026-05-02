@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .connectors import router as connectors_router
 from .datasets import router as datasets_router
 from .executions import router as executions_router
 from .templates import router as templates_router
@@ -10,3 +11,4 @@ router.include_router(datasets_router)
 router.include_router(workflows_router)
 router.include_router(executions_router)
 router.include_router(templates_router)
+router.include_router(connectors_router)
