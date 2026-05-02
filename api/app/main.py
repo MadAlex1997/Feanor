@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from .middleware import RequestIDMiddleware
 from .routes import auth, health
+from .routes.v1 import router as v1_router
 
 
 def create_app() -> FastAPI:
@@ -16,6 +17,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(v1_router)
 
     return app
 
