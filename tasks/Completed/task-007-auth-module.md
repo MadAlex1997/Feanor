@@ -1,7 +1,7 @@
 ---
 title: feanor auth module — TokenManager (acquire, cache, refresh)
 phase: 0
-status: Pending
+status: Completed
 ---
 
 ## Description
