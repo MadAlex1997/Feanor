@@ -5,17 +5,20 @@ import uuid
 from typing import Any
 
 from asyncpg import ForeignKeyViolationError, UniqueViolationError
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.app.db import get_db
-from api.app.deps import ANALYST, ENGINEER, PLATFORM_ADMIN, CurrentUser, require_roles
+from api.app.db import AsyncSessionLocal, get_db
+from api.app.deps import ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT, CurrentUser, require_roles
+from api.app.dispatch import dispatch_execution
+from api.app.models.execution import Execution, ExecutionStatus
 from api.app.models.template import ExecutionTemplate
 from api.app.models.workflow import Workflow
 from api.app.schemas import APIResponse, Meta
+from api.app.schemas.execution import ExecutionRead, ExecutionRunRequest
 from api.app.schemas.pagination import PaginatedMeta, decode_cursor, encode_cursor
 from api.app.schemas.workflow import WorkflowCreate, WorkflowRead, WorkflowReadWithTemplate, WorkflowUpdate
 
@@ -24,6 +27,7 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 _ANY_ROLE = require_roles(ANALYST, ENGINEER, PLATFORM_ADMIN)
 _ENG_OR_ADMIN = require_roles(ENGINEER, PLATFORM_ADMIN)
 _ADMIN_ONLY = require_roles(PLATFORM_ADMIN)
+_RUN_ROLES = require_roles(ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT)
 
 
 def _meta(request: Request) -> Meta:
@@ -186,6 +190,47 @@ async def update_workflow(
     await db.flush()
     await db.refresh(row)
     return APIResponse(data=_to_read(row), meta=_meta(request))
+
+
+@router.post("/{workflow_id}/run", status_code=202)
+async def run_workflow(
+    workflow_id: uuid.UUID,
+    body: ExecutionRunRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = _RUN_ROLES,
+) -> Any:
+    row = await db.get(Workflow, workflow_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+
+    execution = Execution(
+        id=uuid.uuid4(),
+        workflow_id=workflow_id,
+        status=ExecutionStatus.pending,
+        inputs=body.inputs,
+        created_by=current_user.subject,
+    )
+    db.add(execution)
+    await db.flush()
+    await db.refresh(execution)
+    # Commit before registering the background task so the dispatcher can see
+    # the execution row (background tasks run before the dependency session closes).
+    await db.commit()
+
+    execution_id = execution.id
+
+    async def _bg_dispatch(eid: uuid.UUID) -> None:
+        async with AsyncSessionLocal() as session:
+            try:
+                await dispatch_execution(eid, session)
+            except Exception:
+                await session.rollback()
+
+    background_tasks.add_task(_bg_dispatch, execution_id)
+
+    return APIResponse(data=ExecutionRead.model_validate(execution), meta=_meta(request))
 
 
 @router.delete("/{workflow_id}", status_code=204)

@@ -97,6 +97,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-feanor}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-feanor}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: feanor
+      FEANOR_API_URL: http://api:8080
+      FEANOR_DISPATCHER_CLIENT_ID: ${FEANOR_DISPATCHER_CLIENT_ID:-dispatcher}
+      FEANOR_DISPATCHER_CLIENT_SECRET: ${FEANOR_DISPATCHER_CLIENT_SECRET:-changeme}
+      FEANOR_S3_ENDPOINT: http://minio:9000
+      FEANOR_RESULT_PREFIX: feanor-results
+      FEANOR_DOCKER_NETWORK: feanor
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,6 +130,20 @@ services:
       retries: 5
       start_period: 15s
     restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/serverless/Dockerfile
+    image: feanor-worker-serverless:local
+    profiles:
+      - worker
+    environment:
+      FEANOR_API_URL: http://api:8080
+      FEANOR_S3_ENDPOINT: http://minio:9000
+      FEANOR_RESULT_BUCKET: feanor-results
+    networks:
+      - feanor
 
 networks:
   feanor:

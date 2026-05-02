@@ -95,6 +95,12 @@ async def api_client(test_session_factory) -> AsyncGenerator[HttpxAsyncClient, N
 
     app.dependency_overrides[get_db] = override_get_db
 
+    # Redirect AsyncSessionLocal used by background tasks (dispatcher) to the test DB.
+    import api.app.routes.v1.workflows as _wf_module
+    import api.app.dispatch as _dispatch_module
+    _wf_module.AsyncSessionLocal = test_session_factory  # type: ignore[attr-defined]
+    _dispatch_module  # imported but AsyncSessionLocal not used directly there
+
     async with HttpxAsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",

@@ -1,23 +1,30 @@
-"""Executions read-only API — GET /v1/executions, GET /v1/executions/{id}."""
+"""Executions API — read, submit, status, logs, cancel, wait."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.app.db import get_db
-from api.app.deps import ANALYST, ENGINEER, PLATFORM_ADMIN, CurrentUser, require_roles
+from api.app.db import AsyncSessionLocal, get_db
+from api.app.deps import ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT, CurrentUser, require_roles
+from api.app.dispatch import VALID_TRANSITIONS, dispatch_execution, is_valid_transition, update_execution_status
+from api.app.dispatch.logs import fetch_log
 from api.app.models.execution import Execution, ExecutionStatus
 from api.app.schemas import APIResponse, Meta
-from api.app.schemas.execution import ExecutionRead
+from api.app.schemas.execution import ExecutionRead, ExecutionStatusUpdate
 from api.app.schemas.pagination import PaginatedMeta, decode_cursor, encode_cursor
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
-_ANY_ROLE = require_roles(ANALYST, ENGINEER, PLATFORM_ADMIN)
+_ANY_ROLE = require_roles(ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT)
+_PRIVILEGED = require_roles(ANALYST, ENGINEER, PLATFORM_ADMIN, SERVICE_ACCOUNT)
+_SERVICE_ONLY = require_roles(SERVICE_ACCOUNT)
+
+_TERMINAL = {ExecutionStatus.succeeded, ExecutionStatus.failed, ExecutionStatus.cancelled}
 
 
 def _meta(request: Request) -> Meta:
@@ -25,7 +32,12 @@ def _meta(request: Request) -> Meta:
 
 
 def _is_privileged(user: CurrentUser) -> bool:
-    return ENGINEER in user.roles or PLATFORM_ADMIN in user.roles
+    return ENGINEER in user.roles or PLATFORM_ADMIN in user.roles or SERVICE_ACCOUNT in user.roles
+
+
+def _check_visibility(execution: Execution, user: CurrentUser) -> None:
+    if not _is_privileged(user) and execution.created_by != user.subject:
+        raise HTTPException(status_code=403, detail="not your execution")
 
 
 @router.get("")
@@ -41,7 +53,6 @@ async def list_executions(
 ) -> Any:
     stmt = select(Execution)
 
-    # Analysts only see their own executions
     if not _is_privileged(current_user):
         stmt = stmt.where(Execution.created_by == current_user.subject)
 
@@ -115,8 +126,116 @@ async def get_execution(
     row = await db.get(Execution, execution_id)
     if row is None:
         raise HTTPException(status_code=404, detail="execution not found")
-
-    if not _is_privileged(current_user) and row.created_by != current_user.subject:
-        raise HTTPException(status_code=403, detail="not your execution")
-
+    _check_visibility(row, current_user)
     return APIResponse(data=ExecutionRead.model_validate(row), meta=_meta(request))
+
+
+@router.patch("/{execution_id}/status")
+async def update_execution_status_endpoint(
+    execution_id: uuid.UUID,
+    body: ExecutionStatusUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = _SERVICE_ONLY,
+) -> Any:
+    row = await db.get(Execution, execution_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="execution not found")
+
+    try:
+        target = ExecutionStatus(body.status)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"invalid status: {body.status}")
+
+    if not is_valid_transition(row.status, target):
+        raise HTTPException(
+            status_code=409,
+            detail=f"invalid transition: {row.status.value} → {target.value}",
+        )
+
+    await update_execution_status(
+        row, target, db, result_ref=body.result_ref, log_ref=body.log_ref
+    )
+    return APIResponse(data=ExecutionRead.model_validate(row), meta=_meta(request))
+
+
+@router.get("/{execution_id}/logs")
+async def get_execution_logs(
+    execution_id: uuid.UUID,
+    request: Request,
+    tail: int | None = Query(None, ge=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = _ANY_ROLE,
+) -> Any:
+    row = await db.get(Execution, execution_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="execution not found")
+    _check_visibility(row, current_user)
+
+    if row.log_ref is None:
+        return Response(status_code=204)
+
+    log_text = await fetch_log(row.log_ref)
+    if log_text is None:
+        return Response(status_code=204)
+
+    if tail is not None:
+        lines = log_text.splitlines()
+        log_text = "\n".join(lines[-tail:])
+
+    return APIResponse(
+        data={"execution_id": str(execution_id), "log": log_text},
+        meta=_meta(request),
+    )
+
+
+@router.post("/{execution_id}/cancel")
+async def cancel_execution(
+    execution_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = _ANY_ROLE,
+) -> Any:
+    row = await db.get(Execution, execution_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="execution not found")
+    _check_visibility(row, current_user)
+
+    if row.status in _TERMINAL:
+        raise HTTPException(status_code=409, detail="execution already in terminal state")
+
+    row.cancel_requested = True
+    await update_execution_status(row, ExecutionStatus.cancelled, db)
+    return APIResponse(data=ExecutionRead.model_validate(row), meta=_meta(request))
+
+
+@router.get("/{execution_id}/wait")
+async def wait_for_execution(
+    execution_id: uuid.UUID,
+    request: Request,
+    timeout: int = Query(60, ge=1, le=300),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = _ANY_ROLE,
+) -> Any:
+    row = await db.get(Execution, execution_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="execution not found")
+    _check_visibility(row, current_user)
+
+    elapsed = 0
+    poll_interval = 2
+    while row.status not in _TERMINAL and elapsed < timeout:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        await db.refresh(row)
+
+    if row.status in _TERMINAL:
+        return APIResponse(data=ExecutionRead.model_validate(row), meta=_meta(request))
+
+    raise HTTPException(
+        status_code=408,
+        detail={
+            "message": "execution did not reach terminal status within timeout",
+            "execution": ExecutionRead.model_validate(row).model_dump(mode="json"),
+        },
+    )

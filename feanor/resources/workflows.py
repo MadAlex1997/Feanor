@@ -42,3 +42,14 @@ class WorkflowsResource:
         if resp.status_code == 204:
             return
         self._http.raise_for_envelope(resp)
+
+    async def resolve(self, slug: str, version: str) -> Workflow:
+        resp = await self._http.get(
+            "/v1/workflows",
+            params={"slug": slug, "limit": 1},
+        )
+        data = self._http.raise_for_envelope(resp)
+        matches = [w for w in data if w.get("version") == version]
+        if not matches:
+            raise ValueError(f"workflow not found: {slug}:{version}")
+        return Workflow.model_validate(matches[0])

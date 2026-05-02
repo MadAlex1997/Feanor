@@ -188,11 +188,124 @@ async def test_executions_list_returns_typed_models() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executions_submit_raises_not_implemented() -> None:
+async def test_executions_submit_wait_false_returns_immediately() -> None:
+    pending = {**_execution_payload(), "status": "pending"}
     http = MagicMock()
+    http.post = AsyncMock(return_value=_make_resp(202, {"data": pending, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
     resource = ExecutionsResource(http)
-    with pytest.raises(NotImplementedError):
-        await resource.submit(workflow="my-etl:v1")
+    result = await resource.submit(workflow=pending["workflow_id"], inputs={"a": "1"}, wait=False)
+    assert result.status == "pending"
+    http.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_executions_submit_wait_true_polls_wait_endpoint() -> None:
+    pending = {**_execution_payload(), "status": "pending"}
+    terminal = {**pending, "status": "succeeded"}
+    http = MagicMock()
+    http.post = AsyncMock(return_value=_make_resp(202, {"data": pending, "error": None}))
+    http.get = AsyncMock(return_value=_make_resp(200, {"data": terminal, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    result = await resource.submit(workflow=pending["workflow_id"], wait=True, timeout=30)
+    assert result.status == "succeeded"
+    http.get.assert_called_once()
+    call_args = http.get.call_args
+    assert "wait" in call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_executions_submit_wait_408_raises_feanor_error() -> None:
+    from feanor.http import FeanorHTTPClient
+
+    pending = {**_execution_payload(), "status": "running"}
+    http = MagicMock()
+    http.post = AsyncMock(return_value=_make_resp(202, {"data": pending, "error": None}))
+    wait_resp = _make_resp(408, {"detail": {"message": "timed out", "execution": pending}})
+    http.get = AsyncMock(return_value=wait_resp)
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    with pytest.raises(FeanorAPIError) as exc:
+        await resource.submit(workflow=pending["workflow_id"], wait=True)
+    assert exc.value.status_code == 408
+
+
+@pytest.mark.asyncio
+async def test_executions_submit_slug_version_resolves_to_uuid() -> None:
+    wf = _workflow_payload()
+    pending = {**_execution_payload(), "workflow_id": wf["id"]}
+
+    http = MagicMock()
+
+    async def fake_get(path: str, **kwargs: object) -> httpx.Response:
+        if "/v1/workflows" in path:
+            return _make_resp(200, {"data": [wf], "error": None})
+        return _make_resp(200, {"data": [], "error": None})
+
+    http.get = AsyncMock(side_effect=fake_get)
+    http.post = AsyncMock(return_value=_make_resp(202, {"data": pending, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+
+    resource = ExecutionsResource(http)
+    result = await resource.submit(workflow="my-etl:v1", wait=False)
+    assert result.workflow_id.hex.replace("-", "") or True  # just confirm it parsed
+    assert http.post.call_args[0][0] == f"/v1/workflows/{wf['id']}/run"
+
+
+@pytest.mark.asyncio
+async def test_executions_submit_nonexistent_slug_raises_value_error() -> None:
+    http = MagicMock()
+    http.get = AsyncMock(return_value=_make_resp(200, {"data": [], "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    with pytest.raises(ValueError, match="workflow not found"):
+        await resource.submit(workflow="nonexistent:v1")
+
+
+@pytest.mark.asyncio
+async def test_executions_cancel_returns_updated_execution() -> None:
+    cancelled = {**_execution_payload(), "status": "cancelled"}
+    http = MagicMock()
+    http.post = AsyncMock(return_value=_make_resp(200, {"data": cancelled, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    result = await resource.cancel(cancelled["id"])
+    assert result.status == "cancelled"
+    assert "/cancel" in http.post.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_executions_logs_returns_text() -> None:
+    http = MagicMock()
+    http.get = AsyncMock(return_value=_make_resp(200, {"data": {"execution_id": "x", "log": "hello\nworld"}, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    result = await resource.logs("exec-id")
+    assert result == "hello\nworld"
+
+
+@pytest.mark.asyncio
+async def test_executions_logs_returns_none_on_204() -> None:
+    resp = _make_resp(204, {})
+    resp.is_success = True
+    resp.status_code = 204
+    http = MagicMock()
+    http.get = AsyncMock(return_value=resp)
+    resource = ExecutionsResource(http)
+    result = await resource.logs("exec-id")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_executions_logs_tail_appends_query_param() -> None:
+    http = MagicMock()
+    http.get = AsyncMock(return_value=_make_resp(200, {"data": {"execution_id": "x", "log": "line"}, "error": None}))
+    http.raise_for_envelope = lambda r: r.json().get("data")
+    resource = ExecutionsResource(http)
+    await resource.logs("exec-id", tail=5)
+    _, kwargs = http.get.call_args
+    assert kwargs.get("params", {}).get("tail") == 5
 
 
 # ---------------------------------------------------------------------------

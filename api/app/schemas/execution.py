@@ -16,9 +16,20 @@ class ExecutionRead(BaseModel):
     inputs: dict[str, Any] | None = None
     result_ref: str | None = None
     log_ref: str | None = None
+    cancel_requested: bool = False
     started_at: datetime | None = None
     ended_at: datetime | None = None
     created_at: datetime
     created_by: str
 
     model_config = {"from_attributes": True}
+
+
+class ExecutionRunRequest(BaseModel):
+    inputs: dict[str, Any] | None = None
+
+
+class ExecutionStatusUpdate(BaseModel):
+    status: str
+    result_ref: str | None = None
+    log_ref: str | None = None

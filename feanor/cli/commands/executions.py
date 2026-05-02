@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Optional
 
 import typer
@@ -11,7 +12,7 @@ from feanor.exceptions import FeanorAPIError
 
 app = typer.Typer(help="Inspect executions.")
 
-_COLS = ["id", "status", "workflow_id", "created_by", "created_at"]
+_COLS = ["id", "workflow_id", "status", "created_by", "created_at", "started_at", "ended_at"]
 
 
 def _ctx_opts(ctx: typer.Context) -> tuple[Optional[str], str, bool]:
@@ -53,7 +54,7 @@ def get(ctx: typer.Context, execution_id: str = typer.Argument(...)) -> None:
     async def _run() -> None:
         async with AsyncClient(profile) as client:
             result = await client.executions.get(execution_id)
-        render(result, output_fmt, quiet)
+        render(result, output_fmt, quiet, columns=_COLS)
 
     try:
         asyncio.run(_run())
@@ -63,18 +64,87 @@ def get(ctx: typer.Context, execution_id: str = typer.Argument(...)) -> None:
 
 
 @app.command()
-def logs(
+def cancel(
     ctx: typer.Context,
     execution_id: str = typer.Argument(...),
-    follow: bool = typer.Option(False, "--follow", "-f"),
+    output: Optional[str] = typer.Option(None, "--output", "-o"),
 ) -> None:
-    """Stream execution logs. (Phase 2 feature — not yet available.)"""
-    typer.echo("Execution log streaming is a Phase 2 feature.", err=True)
-    raise typer.Exit(1)
+    """Cancel a running or pending execution."""
+    profile, output_fmt, quiet = _ctx_opts(ctx)
+    if output:
+        output_fmt = output
+
+    async def _run() -> None:
+        async with AsyncClient(profile) as client:
+            result = await client.executions.cancel(execution_id)
+        typer.echo("Execution cancelled.")
+        render(result, output_fmt, quiet, columns=_COLS)
+
+    try:
+        asyncio.run(_run())
+    except FeanorAPIError as exc:
+        if exc.status_code == 409:
+            error(exc.message)
+            raise typer.Exit(1)
+        if exc.status_code == 404:
+            error("Execution not found.")
+            raise typer.Exit(2)
+        error(exc.message)
+        raise typer.Exit(1)
 
 
 @app.command()
-def cancel(ctx: typer.Context, execution_id: str = typer.Argument(...)) -> None:
-    """Cancel a running execution. (Phase 2 feature — not yet available.)"""
-    typer.echo("Execution cancellation is a Phase 2 feature.", err=True)
-    raise typer.Exit(1)
+def logs(
+    ctx: typer.Context,
+    execution_id: str = typer.Argument(...),
+    tail: Optional[int] = typer.Option(None, "--tail", "-n"),
+    follow: bool = typer.Option(False, "--follow", "-f"),
+    interval: float = typer.Option(2.0, "--interval", min=1.0),
+) -> None:
+    """Show or follow execution logs."""
+    profile, _, _ = _ctx_opts(ctx)
+
+    _TERMINAL = {"succeeded", "failed", "cancelled"}
+
+    async def _run_once() -> None:
+        async with AsyncClient(profile) as client:
+            result = await client.executions.logs(execution_id, tail=tail)
+        if result is None:
+            typer.echo("No logs available yet.", err=True)
+        else:
+            typer.echo(result)
+
+    async def _run_follow() -> None:
+        lines_seen = 0
+        async with AsyncClient(profile) as client:
+            while True:
+                log_text = await client.executions.logs(execution_id, tail=tail)
+                if log_text is not None:
+                    lines = log_text.splitlines()
+                    new_lines = lines[lines_seen:]
+                    for line in new_lines:
+                        typer.echo(line)
+                    lines_seen = len(lines)
+
+                exe = await client.executions.get(execution_id)
+                if exe.status in _TERMINAL:
+                    # Final fetch without tail
+                    final = await client.executions.logs(execution_id)
+                    if final is not None:
+                        all_lines = final.splitlines()
+                        for line in all_lines[lines_seen:]:
+                            typer.echo(line)
+                    if exe.status == "failed":
+                        raise typer.Exit(1)
+                    return
+
+                await asyncio.sleep(interval)
+
+    try:
+        if follow:
+            asyncio.run(_run_follow())
+        else:
+            asyncio.run(_run_once())
+    except FeanorAPIError as exc:
+        error(exc.message)
+        raise typer.Exit(1)
