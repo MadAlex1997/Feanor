@@ -1,7 +1,7 @@
 ---
 title: feanor package scaffold — pyproject.toml, directory structure, entry point
 phase: 0
-status: Pending
+status: Completed
 ---
 
 ## Description

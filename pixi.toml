@@ -19,17 +19,35 @@ asyncpg = ">=0.29"
 pyjwt = ">=2.8"
 cryptography = ">=41"
 
+[feature.sdk.dependencies]
+typer = ">=0.12"
+httpx = ">=0.27"
+pydantic = ">=2.0,<3"
+pyyaml = ">=6"
+rich = ">=13"
+
+[feature.dev.dependencies]
+pytest = ">=8"
+pytest-asyncio = ">=0.23"
+black = ">=24"
+ruff = ">=0.4"
+
+[feature.dev.pypi-dependencies]
+feanor = { path = "feanor/", editable = true }
+
 [feature.lint.dependencies]
 black = ">=24"
 ruff = ">=0.4"
 
 [environments]
+default = { features = ["dev"], solve-group = "default" }
 api = { features = ["api", "lint"], solve-group = "default" }
-default = { features = ["lint"], solve-group = "default" }
+sdk = { features = ["sdk", "dev"], solve-group = "default" }
 
 [tasks]
 api-dev = { cmd = "uvicorn api.app.main:app --reload --host 0.0.0.0 --port 8080", env = { PYTHONPATH = "." } }
-lint = { cmd = "black --check api && ruff check api" }
-lint-fix = { cmd = "black api && ruff check --fix api" }
+test = { cmd = "pytest", env = { PYTHONPATH = "." } }
+lint = { cmd = "black --check api feanor && ruff check api feanor" }
+lint-fix = { cmd = "black api feanor && ruff check --fix api feanor" }
 db-upgrade = { cmd = "alembic upgrade head", env = { PYTHONPATH = "." } }
 db-downgrade = { cmd = "alembic downgrade -1", env = { PYTHONPATH = "." } }
