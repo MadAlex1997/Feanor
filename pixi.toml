@@ -35,6 +35,7 @@ ruff = ">=0.4"
 
 [feature.dev.pypi-dependencies]
 feanor = { path = "feanor/", editable = true }
+testcontainers = { version = ">=4.0", extras = ["postgres"] }
 
 [feature.lint.dependencies]
 black = ">=24"

@@ -3,14 +3,12 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from api.app.schemas import Meta
 
 
-class PaginatedMeta(BaseModel):
-    request_id: str
+class PaginatedMeta(Meta):
     cursor: str | None = None
     limit: int
     total: int | None = None

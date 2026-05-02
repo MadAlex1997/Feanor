@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -12,4 +12,4 @@ class Meta(BaseModel):
 class APIResponse(BaseModel, Generic[T]):
     data: T | None
     error: str | None = None
-    meta: Meta
+    meta: Any  # Meta or PaginatedMeta — serialized as-is
