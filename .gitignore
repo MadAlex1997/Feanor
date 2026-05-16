@@ -15,3 +15,5 @@ dist/
 
 # Pixi environments (lockfile IS committed; local env dirs are not)
 .pixi/
+airflow/wheels/
+build/

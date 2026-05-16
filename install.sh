@@ -65,6 +65,13 @@ else
     ok ".env created with a generated Fernet key."
 fi
 
+# ── Build feanor wheel ─────────────────────────────────────────────────────────
+header "Building feanor wheel"
+info "Building feanor wheel for airflow image..."
+mkdir -p airflow/wheels
+/usr/bin/python3 -m pip wheel --no-cache-dir --no-deps --wheel-dir airflow/wheels feanor/ -q
+ok "Wheel built."
+
 # ── Build images ───────────────────────────────────────────────────────────────
 header "Building Docker images"
 info "Building api and airflow images (this may take a few minutes the first time)..."
